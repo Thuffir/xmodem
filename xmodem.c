@@ -1,5 +1,6 @@
 /*	
  * Copyright 2001-2019 Georges Menie (www.menie.org)
+ * Modified by Thuffir in 2019
  * All rights reserved.
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -74,7 +75,22 @@ static void flushinput(void)
 		;
 }
 
-int xmodemReceive(unsigned char *dest, int destsz)
+/*
+ * XMODEM Receive
+ */
+int xmodemReceive(
+	/* Function pointer for storing the received chunks or NULL*/
+	void (*storeChunk)(
+		/* Pointer to the function context (can be used for anything) */
+		void *funcCtx,
+		/* Pointer to the XMODEM receive buffer (store data from here) */
+		void *xmodemBuffer,
+		/* Number of bytes received in the XMODEM buffer (and to be stored) */
+		int xmodemSize),
+	/* If storeChunk is NULL, pointer to the buffer to store the received data, else function context pointer to pass to storeChunk() */
+	void *ctx,
+	/* Number of bytes to receive */
+	int destsz)
 {
 	unsigned char xbuff[1030]; /* 1024 for XModem 1k + 3 head chars + 2 crc + nul */
 	unsigned char *p;
@@ -135,7 +151,12 @@ int xmodemReceive(unsigned char *dest, int destsz)
 				register int count = destsz - len;
 				if (count > bufsz) count = bufsz;
 				if (count > 0) {
-					memcpy (&dest[len], &xbuff[3], count);
+					if(storeChunk) {
+						storeChunk(ctx, &xbuff[3], count);
+					}
+					else {
+						memcpy (&((unsigned char *)ctx)[len], &xbuff[3], count);
+					}
 					len += count;
 				}
 				++packetno;
@@ -157,7 +178,26 @@ int xmodemReceive(unsigned char *dest, int destsz)
 	}
 }
 
-int xmodemTransmit(unsigned char *src, int srcsz)
+/*
+ * XMODEM Transmit
+ */
+int xmodemTransmit(
+	/* Function pointer for fetching the data chunks to be sent or NULL*/
+	void (*fetchChunk)(
+		/* Pointer to the function context (can be used for anything) */
+		void *funcCtx,
+		/* Pointer to the XMODEM send buffer (fetch data into here) */
+		void *xmodemBuffer,
+		/* Number of bytes that should be fetched (and stored into the XMODEM send buffer) */
+		int xmodemSize),
+	/* If fetchChunk is NULL, pointer to the buffer to be sent, else function context pointer to pass to fetchChunk() */
+	void *ctx,
+	/* Number of bytes to send */
+	int srcsz,
+	/* If nonzero 1024 byte blocks are used (XMODEM-1K) */
+	int onek,
+	/* If nonzero binary mode is active (do not append CTRLZ to the end of data) */
+	int binary)
 {
 	unsigned char xbuff[1030]; /* 1024 for XModem 1k + 3 head chars + 2 crc + nul */
 	int bufsz, crc = -1;
@@ -195,19 +235,29 @@ int xmodemTransmit(unsigned char *src, int srcsz)
 
 		for(;;) {
 		start_trans:
-			xbuff[0] = SOH; bufsz = 128;
+			if(onek) {
+				xbuff[0] = STX; bufsz = 1024;
+			}
+			else {
+				xbuff[0] = SOH; bufsz = 128;
+			}
 			xbuff[1] = packetno;
 			xbuff[2] = ~packetno;
 			c = srcsz - len;
 			if (c > bufsz) c = bufsz;
-			if (c >= 0) {
+			if ((c > 0) || (!binary && (c == 0))) {
 				memset (&xbuff[3], 0, bufsz);
-				if (c == 0) {
+				if (!binary && (c == 0)) {
 					xbuff[3] = CTRLZ;
 				}
 				else {
-					memcpy (&xbuff[3], &src[len], c);
-					if (c < bufsz) xbuff[3+c] = CTRLZ;
+					if(fetchChunk) {
+						fetchChunk(ctx, &xbuff[3], c);
+					}
+					else {
+						memcpy (&xbuff[3], &((unsigned char *)ctx)[len], c);
+					}
+					if (!binary && (c < bufsz)) xbuff[3+c] = CTRLZ;
 				}
 				if (crc) {
 					unsigned short ccrc = crc16_ccitt(&xbuff[3], bufsz);
@@ -272,7 +322,7 @@ int main(void)
 	   0x30000 is the download address,
 	   65536 is the maximum size to be written at this address
 	 */
-	st = xmodemReceive((char *)0x30000, 65536);
+	st = xmodemReceive(NULL, (char *)0x30000, 65536);
 	if (st < 0) {
 		printf ("Xmodem receive error: status: %d\n", st);
 	}
@@ -293,7 +343,7 @@ int main(void)
 	   0x30000 is the download address,
 	   12000 is the maximum size to be send from this address
 	 */
-	st = xmodemTransmit((char *)0x30000, 12000);
+	st = xmodemTransmit(NULL, (char *)0x30000, 12000, 0, 0);
 	if (st < 0) {
 		printf ("Xmodem transmit error: status: %d\n", st);
 	}
