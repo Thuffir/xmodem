@@ -35,7 +35,19 @@
 
  */
 
-#include "crc16.h"
+/* Needed for memcpy() */
+#include <string.h>
+
+/*** Config Section ***/
+/* Define this if you have your own CCITT-CRC-16 implementation */
+/* #define HAVE_CRC16 */
+
+/* Define this if you want XMODEM-1K support, it will increase stack usage by 896 bytes */
+#define XMODEM_1K
+
+#define DLY_1S 1000
+#define MAXRETRANS 25
+/*** End Config Section ***/
 
 #define SOH  0x01
 #define STX  0x02
@@ -45,8 +57,38 @@
 #define CAN  0x18
 #define CTRLZ 0x1A
 
-#define DLY_1S 1000
-#define MAXRETRANS 25
+#ifdef XMODEM_1K
+/* 1024 for XModem 1k + 3 head chars + 2 crc */
+#define XBUF_SIZE (1024 + 3 + 2)
+#else
+/* 128 for XModem + 3 head chars + 2 crc */
+#define XBUF_SIZE (128 + 3 + 2)
+#endif
+
+#ifndef HAVE_CRC16
+/*
+ * Calculate the CCITT-CRC-16 value of a given buffer
+ */
+static unsigned short crc16_ccitt(
+	/* Pointer to the byte buffer */
+	const unsigned char *buffer,
+	/* length of the byte buffer */
+	int length)
+{
+	unsigned short crc16 = 0;
+	while(length != 0) {
+		crc16  = (unsigned char)(crc16 >> 8) | (crc16 << 8);
+		crc16 ^= *buffer;
+		crc16 ^= (unsigned char)(crc16 & 0xff) >> 4;
+		crc16 ^= (crc16 << 8) << 4;
+		crc16 ^= ((crc16 & 0xff) << 4) << 1;
+		buffer++;
+		length--;
+	}
+
+	return crc16;
+}
+#endif
 
 static int check(int crc, const unsigned char *buf, int sz)
 {
@@ -90,12 +132,14 @@ int xmodemReceive(
 	/* If storeChunk is NULL, pointer to the buffer to store the received data, else function context pointer to pass to storeChunk() */
 	void *ctx,
 	/* Number of bytes to receive */
-	int destsz)
+	int destsz,
+	/* If nonzero request CRC-16 checksum instead of simple checksum */
+	int usecrc)
 {
-	unsigned char xbuff[1030]; /* 1024 for XModem 1k + 3 head chars + 2 crc + nul */
+	unsigned char xbuff[XBUF_SIZE];
 	unsigned char *p;
 	int bufsz, crc = 0;
-	unsigned char trychar = 'C';
+	unsigned char trychar = usecrc ? 'C' : NAK;
 	unsigned char packetno = 1;
 	int i, c, len = 0;
 	int retry, retrans = MAXRETRANS;
@@ -108,9 +152,11 @@ int xmodemReceive(
 				case SOH:
 					bufsz = 128;
 					goto start_recv;
+#ifdef XMODEM_1K
 				case STX:
 					bufsz = 1024;
 					goto start_recv;
+#endif
 				case EOT:
 					flushinput();
 					_outbyte(ACK);
@@ -199,7 +245,7 @@ int xmodemTransmit(
 	/* If nonzero binary mode is active (do not append CTRLZ to the end of data) */
 	int binary)
 {
-	unsigned char xbuff[1030]; /* 1024 for XModem 1k + 3 head chars + 2 crc + nul */
+	unsigned char xbuff[XBUF_SIZE];
 	int bufsz, crc = -1;
 	unsigned char packetno = 1;
 	int i, c, len = 0;
@@ -235,12 +281,12 @@ int xmodemTransmit(
 
 		for(;;) {
 		start_trans:
+			xbuff[0] = SOH; bufsz = 128;
+#ifdef XMODEM_1K
 			if(onek) {
 				xbuff[0] = STX; bufsz = 1024;
 			}
-			else {
-				xbuff[0] = SOH; bufsz = 128;
-			}
+#endif
 			xbuff[1] = packetno;
 			xbuff[2] = ~packetno;
 			c = srcsz - len;
@@ -322,7 +368,7 @@ int main(void)
 	   0x30000 is the download address,
 	   65536 is the maximum size to be written at this address
 	 */
-	st = xmodemReceive(NULL, (char *)0x30000, 65536);
+	st = xmodemReceive(NULL, (char *)0x30000, 65536, 1);
 	if (st < 0) {
 		printf ("Xmodem receive error: status: %d\n", st);
 	}
