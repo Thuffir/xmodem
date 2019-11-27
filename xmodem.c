@@ -285,12 +285,15 @@ int xmodemTransmit(
 
 		for(;;) {
 		start_trans:
-			xbuff[0] = SOH; bufsz = 128;
 #ifdef XMODEM_1K
-			if(onek) {
+			if(onek && ((srcsz - len) > 128)) {
 				xbuff[0] = STX; bufsz = 1024;
 			}
+			else
 #endif
+			{
+				xbuff[0] = SOH; bufsz = 128;
+			}
 			xbuff[1] = packetno;
 			xbuff[2] = ~packetno;
 			c = (srcsz ? srcsz : bufsz) - len;
