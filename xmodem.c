@@ -135,13 +135,15 @@ int xmodemReceive(
 	/* If nonzero, number of bytes to receive else receive control packet for YMODEM support */
 	int destsz,
 	/* If nonzero request CRC-16 checksum instead of simple checksum */
-	int crc)
+	int crc,
+	/* Transfer mode: 0 - normal, nonzero - receive YMODEM control packet */
+	int mode)
 {
 	unsigned char xbuff[XBUF_SIZE];
 	unsigned char *p;
 	int bufsz;
 	unsigned char trychar = crc ? 'C' : NAK;
-	unsigned char packetno = destsz ? 1 : 0;
+	unsigned char packetno = mode ? 0 : 1;
 	int i, c, len = 0;
 	int retry, retrans = MAXRETRANS;
 
@@ -193,7 +195,7 @@ int xmodemReceive(
 			(xbuff[1] == packetno || xbuff[1] == (unsigned char)packetno-1) &&
 			check(crc, &xbuff[3], bufsz)) {
 			if (xbuff[1] == packetno)	{
-				register int count = (destsz ? destsz : bufsz) - len;
+				register int count = destsz - len;
 				if (count > bufsz) count = bufsz;
 				if (count > 0) {
 					if(storeChunk) {
@@ -215,12 +217,8 @@ int xmodemReceive(
 				return -3; /* too many retry error */
 			}
 			_outbyte(ACK);
-			if(destsz) {
-				continue;
-			}
-			else {
-				return len;
-			}
+			if(mode) return len; /* YMODEM control block received */
+			continue;
 		}
 	reject:
 		flushinput();
@@ -242,16 +240,16 @@ int xmodemTransmit(
 		int xmodemSize),
 	/* If fetchChunk is NULL, pointer to the buffer to be sent, else function context pointer to pass to fetchChunk() */
 	void *ctx,
-	/* If nonzero, number of bytes to send else send control packet for YMODEM support */
+	/* Number of bytes to send */
 	int srcsz,
 	/* If nonzero 1024 byte blocks are used (XMODEM-1K) */
 	int onek,
-	/* If nonzero binary mode is active (do not append CTRLZ to the end of data) */
-	int binary)
+	/* Transfer mode: 0 - text (append CTRLZ), 1- binary (do not append CTRLZ ), 2 - send YMODEM control packet */
+	int mode)
 {
 	unsigned char xbuff[XBUF_SIZE];
 	int bufsz, crc = -1;
-	unsigned char packetno = srcsz ? 1 : 0;
+	unsigned char packetno = (mode == 2) ? 0 : 1;
 	int i, c, len = 0;
 	int retry;
 
@@ -285,8 +283,9 @@ int xmodemTransmit(
 
 		for(;;) {
 		start_trans:
+			c = srcsz - len;
 #ifdef XMODEM_1K
-			if(onek && ((srcsz - len) > 128)) {
+			if(onek && (c > 128)) {
 				xbuff[0] = STX; bufsz = 1024;
 			}
 			else
@@ -296,11 +295,10 @@ int xmodemTransmit(
 			}
 			xbuff[1] = packetno;
 			xbuff[2] = ~packetno;
-			c = (srcsz ? srcsz : bufsz) - len;
 			if (c > bufsz) c = bufsz;
-			if ((c > 0) || (!binary && (c == 0))) {
+			if ((c > 0) || (!mode && (c == 0))) {
 				memset (&xbuff[3], 0, bufsz);
-				if (!binary && (c == 0)) {
+				if (!mode && (c == 0)) {
 					xbuff[3] = CTRLZ;
 				}
 				else {
@@ -310,7 +308,7 @@ int xmodemTransmit(
 					else {
 						memcpy (&xbuff[3], &((unsigned char *)ctx)[len], c);
 					}
-					if (!binary && (c < bufsz)) xbuff[3+c] = CTRLZ;
+					if (!mode && (c < bufsz)) xbuff[3+c] = CTRLZ;
 				}
 				if (crc) {
 					unsigned short ccrc = crc16_ccitt(&xbuff[3], bufsz);
@@ -353,7 +351,10 @@ int xmodemTransmit(
 				flushinput();
 				return -4; /* xmit error */
 			}
-			else if(srcsz) {
+			else if(mode == 2) {
+				return len; /* YMODEM control block sent */
+			}
+			else {
 				for (retry = 0; retry < 10; ++retry) {
 					_outbyte(EOT);
 					if ((c = _inbyte((DLY_1S)<<1)) == ACK) break;
@@ -365,9 +366,6 @@ int xmodemTransmit(
 					flushinput();
 					return -5; /* No ACK after EOT */
 				}
-			}
-			else {
-				return len; /* YMODEM control block sent */
 			}
 		}
 	}
