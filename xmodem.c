@@ -132,17 +132,17 @@ int xmodemReceive(
 		int xmodemSize),
 	/* If storeChunk is NULL, pointer to the buffer to store the received data, else function context pointer to pass to storeChunk() */
 	void *ctx,
-	/* If nonzero, number of bytes to receive else receive control packet for YMODEM support */
+	/* Number of bytes to receive */
 	int destsz,
-	/* If nonzero request CRC-16 checksum instead of simple checksum */
+	/* Checksum mode to request: 0 - arithmetic, 1 - CRC16, 2 - YMODEM-G (CRC16 and no ACK) */
 	int crc,
-	/* Transfer mode: 0 - normal, nonzero - receive YMODEM control packet */
+	/* Receive mode: 0 - normal, nonzero - receive YMODEM control packet */
 	int mode)
 {
 	unsigned char xbuff[XBUF_SIZE];
 	unsigned char *p;
 	int bufsz;
-	unsigned char trychar = crc ? 'C' : NAK;
+	unsigned char trychar = (crc == 2) ? 'G' : (crc ? 'C' : NAK);
 	unsigned char packetno = mode ? 0 : 1;
 	int i, c, len = 0;
 	int retry, retrans = MAXRETRANS;
@@ -175,7 +175,8 @@ int xmodemReceive(
 				}
 			}
 		}
-		if (trychar == 'C') { trychar = NAK; crc = 0; continue; }
+		if (trychar == 'G') { trychar = 'C'; crc = 1; continue; }
+		else if (trychar == 'C') { trychar = NAK; crc = 0; continue; }
 		flushinput();
 		_outbyte(CAN);
 		_outbyte(CAN);
@@ -216,7 +217,7 @@ int xmodemReceive(
 				_outbyte(CAN);
 				return -3; /* too many retry error */
 			}
-			_outbyte(ACK);
+			if(crc != 2) _outbyte(ACK);
 			if(mode) return len; /* YMODEM control block received */
 			continue;
 		}
@@ -257,6 +258,9 @@ int xmodemTransmit(
 		for( retry = 0; retry < 16; ++retry) {
 			if ((c = _inbyte((DLY_1S)<<1)) >= 0) {
 				switch (c) {
+				case 'G':
+					crc = 2;
+					goto start_trans;
 				case 'C':
 					crc = 1;
 					goto start_trans;
@@ -326,7 +330,8 @@ int xmodemTransmit(
 					for (i = 0; i < bufsz+4+(crc?1:0); ++i) {
 						_outbyte(xbuff[i]);
 					}
-					if ((c = _inbyte(DLY_1S)) >= 0 ) {
+					c = (crc == 2) ? ACK : _inbyte(DLY_1S);
+					if (c >= 0 ) {
 						switch (c) {
 						case ACK:
 							++packetno;
