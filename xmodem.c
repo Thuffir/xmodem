@@ -245,12 +245,12 @@ int xmodemTransmit(
 	int srcsz,
 	/* If nonzero 1024 byte blocks are used (XMODEM-1K) */
 	int onek,
-	/* Transfer mode: 0 - text (append CTRLZ), 1- binary (do not append CTRLZ ), 2 - send YMODEM control packet */
+	/* Transfer mode: 0 - normal, nonzero - transmit YMODEM control packet */
 	int mode)
 {
 	unsigned char xbuff[XBUF_SIZE];
 	int bufsz, crc = -1;
-	unsigned char packetno = (mode == 2) ? 0 : 1;
+	unsigned char packetno = mode ? 0 : 1;
 	int i, c, len = 0;
 	int retry;
 
@@ -300,19 +300,13 @@ int xmodemTransmit(
 			xbuff[1] = packetno;
 			xbuff[2] = ~packetno;
 			if (c > bufsz) c = bufsz;
-			if ((c > 0) || (!mode && (c == 0))) {
-				memset (&xbuff[3], 0, bufsz);
-				if (!mode && (c == 0)) {
-					xbuff[3] = CTRLZ;
+			if (c > 0) {
+				memset (&xbuff[3], mode ? 0 : CTRLZ, bufsz);
+				if(fetchChunk) {
+					fetchChunk(ctx, &xbuff[3], c);
 				}
 				else {
-					if(fetchChunk) {
-						fetchChunk(ctx, &xbuff[3], c);
-					}
-					else {
-						memcpy (&xbuff[3], &((unsigned char *)ctx)[len], c);
-					}
-					if (!mode && (c < bufsz)) xbuff[3+c] = CTRLZ;
+					memcpy (&xbuff[3], &((unsigned char *)ctx)[len], c);
 				}
 				if (crc) {
 					unsigned short ccrc = crc16_ccitt(&xbuff[3], bufsz);
@@ -356,7 +350,7 @@ int xmodemTransmit(
 				flushinput();
 				return -4; /* xmit error */
 			}
-			else if(mode == 2) {
+			else if(mode) {
 				return len; /* YMODEM control block sent */
 			}
 			else {
