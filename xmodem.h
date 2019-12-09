@@ -57,7 +57,7 @@ typedef void (*StoreChunkType)(
   int xmodemSize);
 
 /***********************************************************************************************************************
-* XMODEM Receive
+ * XMODEM Receive
  **********************************************************************************************************************/
 int XmodemReceive(
   /* Function pointer for storing the received chunks or NULL*/
@@ -71,6 +71,16 @@ int XmodemReceive(
   int crc,
   /* Receive mode: 0 - normal, nonzero - receive YMODEM control packet */
   int mode);
+
+/***********************************************************************************************************************
+ * Function shortcut - XMODEM Receive with checksum
+ **********************************************************************************************************************/
+#define XmodemReceiveCsum(storeChunk, ctx, destsz) XmodemReceive(storeChunk, ctx, destsz, 0, 0)
+
+/***********************************************************************************************************************
+ * Function shortcut - XMODEM Receive with CRC-16
+ **********************************************************************************************************************/
+#define XmodemReceiveCrc(storeChunk, ctx, destsz) XmodemReceive(storeChunk, ctx, destsz, 1, 0)
 
 /***********************************************************************************************************************
  * Function prototype for fetching the data chunks
@@ -97,5 +107,15 @@ int XmodemTransmit(
   int onek,
   /* Transfer mode: 0 - normal, nonzero - transmit YMODEM control packet */
   int mode);
+
+/***********************************************************************************************************************
+ * Function shortcut - XMODEM Transmit with 128 bytes blocks
+ **********************************************************************************************************************/
+#define XmodemTransmit128b(fetchChunk, ctx, srcsz) XmodemTransmit(fetchChunk, ctx, srcsz, 0, 0)
+
+/***********************************************************************************************************************
+ * Function shortcut - XMODEM Transmit with 1K blocks
+ **********************************************************************************************************************/
+#define XmodemTransmit1K(fetchChunk, ctx, srcsz) XmodemTransmit(fetchChunk, ctx, srcsz, 1, 0)
 
 #endif // XMODEM_H_
