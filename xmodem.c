@@ -44,12 +44,12 @@
 /***********************************************************************************************************************
  * Character constants
  **********************************************************************************************************************/
-#define SOH  0x01
-#define STX  0x02
-#define EOT  0x04
-#define ACK  0x06
-#define NAK  0x15
-#define CAN  0x18
+#define SOH   0x01
+#define STX   0x02
+#define EOT   0x04
+#define ACK   0x06
+#define NAK   0x15
+#define CAN   0x18
 #define CTRLZ 0x1A
 
 #ifdef XMODEM_1K
@@ -121,23 +121,7 @@ static void flushinput(void)
 /***********************************************************************************************************************
  * XMODEM Receive
  **********************************************************************************************************************/
-int xmodemReceive(
-  /* Function pointer for storing the received chunks or NULL*/
-  void (*storeChunk)(
-    /* Pointer to the function context (can be used for anything) */
-    void *funcCtx,
-    /* Pointer to the XMODEM receive buffer (store data from here) */
-    void *xmodemBuffer,
-    /* Number of bytes received in the XMODEM buffer (and to be stored) */
-    int xmodemSize),
-  /* If storeChunk is NULL, pointer to the buffer to store the received data, else function context pointer to pass to storeChunk() */
-  void *ctx,
-  /* Number of bytes to receive */
-  int destsz,
-  /* Checksum mode to request: 0 - arithmetic, 1 - CRC16, 2 - YMODEM-G (CRC16 and no ACK) */
-  int crc,
-  /* Receive mode: 0 - normal, nonzero - receive YMODEM control packet */
-  int mode)
+int XmodemReceive(StoreChunkType storeChunk, void *ctx, int destsz, int crc, int mode)
 {
   unsigned char xbuff[XBUF_SIZE];
   unsigned char *p;
@@ -230,23 +214,7 @@ int xmodemReceive(
 /***********************************************************************************************************************
  * XMODEM Transmit
  **********************************************************************************************************************/
-int xmodemTransmit(
-  /* Function pointer for fetching the data chunks to be sent or NULL*/
-  void (*fetchChunk)(
-    /* Pointer to the function context (can be used for anything) */
-    void *funcCtx,
-    /* Pointer to the XMODEM send buffer (fetch data into here) */
-    void *xmodemBuffer,
-    /* Number of bytes that should be fetched (and stored into the XMODEM send buffer) */
-    int xmodemSize),
-  /* If fetchChunk is NULL, pointer to the buffer to be sent, else function context pointer to pass to fetchChunk() */
-  void *ctx,
-  /* Number of bytes to send */
-  int srcsz,
-  /* If nonzero 1024 byte blocks are used (XMODEM-1K) */
-  int onek,
-  /* Transfer mode: 0 - normal, nonzero - transmit YMODEM control packet */
-  int mode)
+int XmodemTransmit(FetchChunkType fetchChunk, void *ctx, int srcsz, int onek, int mode)
 {
   unsigned char xbuff[XBUF_SIZE];
   int bufsz, crc = -1;
