@@ -41,6 +41,10 @@
 #include <string.h>
 #include "xmodem.h"
 
+#ifdef XMODEM_USE_MALLOC
+#include <stdlib.h>
+#endif
+
 /***********************************************************************************************************************
  * Character constants
  **********************************************************************************************************************/
@@ -123,13 +127,25 @@ static void flushinput(void)
  **********************************************************************************************************************/
 int XmodemReceive(StoreChunkType storeChunk, void *ctx, int destsz, int crc, int mode)
 {
-  unsigned char xbuff[XBUF_SIZE];
   unsigned char *p;
   int bufsz;
   unsigned char trychar = (crc == 2) ? 'G' : (crc ? 'C' : NAK);
   unsigned char packetno = mode ? 0 : 1;
   int i, c, len = 0;
   int retry, retrans = MAXRETRANS;
+  int retval;
+
+#ifdef XMODEM_USE_MALLOC
+  unsigned char *xbuff;
+
+  xbuff = malloc(XBUF_SIZE);
+  if(xbuff == NULL) {
+    retval = XMODEM_ERROR_MALLOC;
+    goto exit;
+  }
+#else
+  unsigned char xbuff[XBUF_SIZE];
+#endif
 
   for(;;) {
     for( retry = 0; retry < 16; ++retry) {
@@ -146,12 +162,14 @@ int XmodemReceive(StoreChunkType storeChunk, void *ctx, int destsz, int crc, int
 #endif
           case EOT:
             _outbyte(ACK);
-            return len; /* normal end */
+            retval = len; /* normal end */
+            goto exit;
           case CAN:
             if ((c = _inbyte(DLY_1S)) == CAN) {
               flushinput();
               _outbyte(ACK);
-              return -1; /* canceled by remote */
+              retval = XMODEM_ERROR_CANCEL; /* canceled by remote */
+              goto exit;
             }
             break;
           default:
@@ -165,7 +183,8 @@ int XmodemReceive(StoreChunkType storeChunk, void *ctx, int destsz, int crc, int
     _outbyte(CAN);
     _outbyte(CAN);
     _outbyte(CAN);
-    return -2; /* sync error */
+    retval = XMODEM_ERROR_SYNC; /* sync error */
+    goto exit;
 
     start_recv:
     trychar = 0;
@@ -199,16 +218,26 @@ int XmodemReceive(StoreChunkType storeChunk, void *ctx, int destsz, int crc, int
         _outbyte(CAN);
         _outbyte(CAN);
         _outbyte(CAN);
-        return -3; /* too many retry error */
+        retval = XMODEM_ERROR_RETRIES; /* too many retry error */
+        goto exit;
       }
       if(crc != 2) _outbyte(ACK);
-      if(mode) return len; /* YMODEM control block received */
+      if(mode) {
+        retval = len; /* YMODEM control block received */
+        goto exit;
+      }
       continue;
     }
     reject:
     flushinput();
     _outbyte(NAK);
   }
+
+  exit:
+#ifdef XMODEM_USE_MALLOC
+  free(xbuff);
+#endif
+  return retval;
 }
 
 /***********************************************************************************************************************
@@ -216,11 +245,23 @@ int XmodemReceive(StoreChunkType storeChunk, void *ctx, int destsz, int crc, int
  **********************************************************************************************************************/
 int XmodemTransmit(FetchChunkType fetchChunk, void *ctx, int srcsz, int onek, int mode)
 {
-  unsigned char xbuff[XBUF_SIZE];
   int bufsz, crc = -1;
   unsigned char packetno = mode ? 0 : 1;
   int i, c, len = 0;
   int retry;
+  int retval;
+
+#ifdef XMODEM_USE_MALLOC
+  unsigned char *xbuff;
+
+  xbuff = malloc(XBUF_SIZE);
+  if(xbuff == NULL) {
+    retval = XMODEM_ERROR_MALLOC;
+    goto exit;
+  }
+#else
+  unsigned char xbuff[XBUF_SIZE];
+#endif
 
   for(;;) {
     for( retry = 0; retry < 16; ++retry) {
@@ -239,7 +280,8 @@ int XmodemTransmit(FetchChunkType fetchChunk, void *ctx, int srcsz, int onek, in
             if ((c = _inbyte(DLY_1S)) == CAN) {
               _outbyte(ACK);
               flushinput();
-              return -1; /* canceled by remote */
+              retval = XMODEM_ERROR_CANCEL; /* canceled by remote */
+              goto exit;
             }
             break;
           default:
@@ -251,7 +293,8 @@ int XmodemTransmit(FetchChunkType fetchChunk, void *ctx, int srcsz, int onek, in
     _outbyte(CAN);
     _outbyte(CAN);
     flushinput();
-    return -2; /* no sync */
+    retval =  XMODEM_ERROR_SYNC; /* no sync */
+    goto exit;
 
     for(;;) {
       start_trans:
@@ -303,7 +346,8 @@ int XmodemTransmit(FetchChunkType fetchChunk, void *ctx, int srcsz, int onek, in
                 if ((c = _inbyte(DLY_1S)) == CAN) {
                   _outbyte(ACK);
                   flushinput();
-                  return -1; /* canceled by remote */
+                  retval = XMODEM_ERROR_CANCEL; /* canceled by remote */
+                  goto exit;
                 }
                 break;
               case NAK:
@@ -316,10 +360,12 @@ int XmodemTransmit(FetchChunkType fetchChunk, void *ctx, int srcsz, int onek, in
         _outbyte(CAN);
         _outbyte(CAN);
         flushinput();
-        return -4; /* xmit error */
+        retval = XMODEM_ERROR_XMIT; /* xmit error */
+        goto exit;
       }
       else if(mode) {
-        return len; /* YMODEM control block sent */
+        retval = len; /* YMODEM control block sent */
+        goto exit;
       }
       else {
         for (retry = 0; retry < 10; ++retry) {
@@ -327,13 +373,21 @@ int XmodemTransmit(FetchChunkType fetchChunk, void *ctx, int srcsz, int onek, in
           if ((c = _inbyte((DLY_1S)<<1)) == ACK) break;
         }
         if(c == ACK) {
-          return len; /* Normal exit */
+          retval = len; /* Normal exit */
+          goto exit;
         }
         else {
           flushinput();
-          return -5; /* No ACK after EOT */
+          retval = XMODEM_ERROR_ACK; /* No ACK after EOT */
+          goto exit;
         }
       }
     }
   }
+
+  exit:
+#ifdef XMODEM_USE_MALLOC
+  free(xbuff);
+#endif
+  return retval;
 }

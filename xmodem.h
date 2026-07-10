@@ -40,12 +40,25 @@
 /* Define this if you want XMODEM-1K support, it will increase stack usage by 896 bytes */
 #define XMODEM_1K
 
+/* Define this if you want the receive and transmit buffer dynamically allocated */
+/* #define XMODEM_USE_MALLOC */
+
 #define DLY_1S 1000
 #define MAXRETRANS 25
 /** End Config Section ************************************************************************************************/
 
 int _inbyte(unsigned short t);
 void _outbyte(int c);
+
+/***********************************************************************************************************************
+ * Possible Error values
+ **********************************************************************************************************************/
+#define XMODEM_ERROR_CANCEL   -1
+#define XMODEM_ERROR_SYNC     -2
+#define XMODEM_ERROR_RETRIES  -3
+#define XMODEM_ERROR_XMIT     -4
+#define XMODEM_ERROR_ACK      -5
+#define XMODEM_ERROR_MALLOC   -6
 
 /***********************************************************************************************************************
  * Function prototype for storing the received chunks
